@@ -100,16 +100,11 @@ class PriorBox(object):
         output = torch.Tensor(mean).view(-1, 4)
         if self.clip:
             output.clamp_(max=1, min=0)
-        # 一共生成8732个框
+        # 一共生成8732个框 (8732, 4)
         return output
 
-def point_form(bbox):
-    '''
-    bbox: (8732, 4), 这4个点分别是 [中心x, 中心y, 宽度w, 高度h], 我们需要 [左上角x, 左上角y, 右下角x, 右下角y]
-    '''
-    return torch.cat((bbox[:, :2] - bbox[:, 2:] / 2, bbox[:, :2] + bbox[:, 2:] / 2), 1)
-
 def get_IoU(boxes1, boxes2):
+    print(f'get_IoU boxes1.shape = {boxes1.shape} \tboxes2.shape = {boxes2.shape}')
     box_area = lambda boxes: ((boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1]))
 
     areas1 = box_area(boxes1)
@@ -141,7 +136,11 @@ def get_IoU(boxes1, boxes2):
     return IoU
 
 def match_anchor_to_bbox(ground_truth, anchors, device=None, iou_threshold=0.5):
-    """将最接近的真实边界框分配给锚框"""
+    """
+    将最接近的真实边界框分配给锚框
+    ground_truth: [1: 4]
+    anchors: [8732, 4]
+    """
     num_anchors, num_gt_boxes = anchors.shape[0], ground_truth.shape[0]
     # 位于第i行和第j列的元素x_ij是锚框i和真实边界框j的IoU
     jaccard = get_IoU(anchors, ground_truth)
@@ -171,7 +170,10 @@ def match_anchor_to_bbox(ground_truth, anchors, device=None, iou_threshold=0.5):
     return anchors_bbox_map
 
 def box_corner_to_center(boxes):
-    """从（左上，右下）转换到（中间，宽度，高度）"""
+    """
+    从（左上，右下）转换到（中间，宽度，高度）
+    为计算偏移量offset做准备
+    """
     x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
     cx = (x1 + x2) / 2
     cy = (y1 + y2) / 2
@@ -192,12 +194,16 @@ def offset_boxes(anchors, assigned_bb, eps=1e-6):
     return offset
 
 def multibox_target(anchors, labels):
-    """使用真实边界框标记锚框"""
+    """
+    使用真实边界框标记锚框
+    anchors: [8732, 4]
+    labels: [batch_size, 1, 5]
+    """
     batch_size, anchors = labels.shape[0], anchors.squeeze(0)
     batch_offset, batch_mask, batch_class_labels = [], [], []
     device, num_anchors = anchors.device, anchors.shape[0]
     for i in range(batch_size):
-        label = labels[i, :, :].cuda() if cuda else labels[i, :, :]
+        label = labels[i, :, :].cuda() if cuda else labels[i, :, :] # [1, 5]
         anchors_bbox_map = match_anchor_to_bbox(label[:, 1:], anchors, device)
         bbox_mask = ((anchors_bbox_map >= 0).float().unsqueeze(-1)).repeat(1, 4)
         # 将类标签和分配的边界框坐标初始化为零
@@ -363,7 +369,7 @@ class SSD_300(nn.Module):
 
         loc = loc.view(loc.shape[0], -1)
         cls = cls.view(cls.shape[0], -1, opt.num_class + 1)
-        
+
         return tuple((self.defaultbox.cuda() if cuda else self.defaultbox, 
                       loc.cuda() if cuda else loc, 
                       cls.cuda() if cuda else cls))
@@ -384,6 +390,10 @@ def get_loss(pred_class, true_class, pred_loc, true_loc, bbox_masks, cross_entro
     计算损失函数
     损失函数分为两个部分 class_loss, 类别损失和偏移量损失 offset_loss
     bbox_masks旨在确保背景(负样例)不参与损失的计算
+    pred_class: [16, 8732, 2]
+    true_class: [16, 8732]
+    pred_loc: [16, 34928]
+    true_loc: [16, 34928]]
     '''
     batch_size, num_classes = pred_class.shape[0], pred_class.shape[2]
     # 计算class_loss

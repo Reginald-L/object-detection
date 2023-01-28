@@ -73,3 +73,8 @@ def get_IoU(boxes1, boxes2):
 #### 架构细节
 <img src='imgs/SSD_net_1_5.png'>
 <img src='imgs/SSD_net_6.png'>
+
+#### 流程
+<img src='imgs/SSD_流程图.png'>
+<img src='imgs/SSD_锚框标注.png'>
+<img src='imgs/SSD_偏移量计算.png'>
